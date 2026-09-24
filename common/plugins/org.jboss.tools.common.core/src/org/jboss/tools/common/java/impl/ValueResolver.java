@@ -27,8 +27,6 @@ import org.eclipse.jdt.core.IPackageDeclaration;
 import org.eclipse.jdt.core.ISourceReference;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaModelException;
-import org.eclipse.jdt.internal.compiler.env.ISourceField;
-import org.eclipse.jdt.internal.core.JavaElement;
 import org.jboss.tools.common.core.CommonCorePlugin;
 import org.jboss.tools.common.util.EclipseJavaUtil;
 import org.jboss.tools.common.util.StringUtil;
@@ -203,24 +201,74 @@ public class ValueResolver {
 			}
 		}
 	}
-
+	
 	/**
 	 * Returns calculated initial value of field.
 	 * @param f
 	 * @return
 	 * @throws JavaModelException
 	 */
+//	public static Object getFieldInitialValue(IField f) throws JavaModelException {
+//		Object c = f.getConstant();
+//		if(c == null && (((JavaElement)f).getElementInfo() instanceof ISourceField)) {
+//			char[] cs = ((ISourceField)((JavaElement)f).getElementInfo()).getInitializationSource();
+//			if(cs != null) {
+//				ValueResolver r = new ValueResolver(f);
+//				c = r.resolveExpression(new String(cs));
+//				r.dispose();
+//			}
+//		}
+//		return c;
+//	}
+
+
+	
+	/**
+	 * Returns calculated initial value of field.
+	 * 
+	 * This no longer relies on the internal method
+	 * org.eclipse.jdt.internal.core.JavaElement#getElementInfo(), which was
+	 * removed/changed in newer JDT versions and caused a NoSuchMethodError.
+	 * Instead, the initializer text is extracted from the field's own source
+	 * (public API ISourceReference#getSource()).
+	 * 
+	 * @param f
+	 * @return
+	 * @throws JavaModelException
+	 */
 	public static Object getFieldInitialValue(IField f) throws JavaModelException {
 		Object c = f.getConstant();
-		if(c == null && (((JavaElement)f).getElementInfo() instanceof ISourceField)) {
-			char[] cs = ((ISourceField)((JavaElement)f).getElementInfo()).getInitializationSource();
-			if(cs != null) {
+		if(c == null && f instanceof ISourceReference) {
+			String source = ((ISourceReference)f).getSource();
+			String initSource = extractInitializer(source);
+			if(initSource != null && initSource.length() > 0) {
 				ValueResolver r = new ValueResolver(f);
-				c = r.resolveExpression(new String(cs));
+				c = r.resolveExpression(initSource);
 				r.dispose();
 			}
 		}
 		return c;
+	}
+
+	/**
+	 * Extracts the initializer part of a field declaration source,
+	 * i.e. everything after '=' and before the trailing ';', if present.
+	 * @param source full field declaration source
+	 * @return initializer text, or null if there is none
+	 */
+	private static String extractInitializer(String source) {
+		if(source == null) {
+			return null;
+		}
+		int eq = source.indexOf('=');
+		if(eq < 0) {
+			return null;
+		}
+		int end = source.lastIndexOf(';');
+		if(end < 0 || end < eq) {
+			end = source.length();
+		}
+		return source.substring(eq + 1, end).trim();
 	}
 
 	public Object resolveExpression(String expression) {
